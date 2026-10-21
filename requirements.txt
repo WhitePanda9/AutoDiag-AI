@@ -3,6 +3,7 @@ langgraph
 langchain-groq
 qdrant-client
 sentence-transformers
+torchvision
 rank-bm25
 streamlit
 python-dotenv

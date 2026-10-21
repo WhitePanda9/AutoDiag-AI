@@ -15,7 +15,31 @@ class BM25Retriever:
         
         corpus = [doc["text"].lower().split() for doc in self.docs]
         self.bm25 = BM25Okapi(corpus)
+        self.docs_by_code = {}
+        for doc in self.docs:
+            self.docs_by_code.setdefault(doc["dtc_code"].upper(), []).append(doc)
         print(f"BM25 index built with {len(self.docs)} documents.")
+
+    @staticmethod
+    def _to_result(doc: dict, source: str, score: float) -> dict:
+        """Return documents in the common retriever result format."""
+        return {
+            "dtc_code": doc["dtc_code"],
+            "fault_name": doc["fault_name"],
+            "symptoms": doc["symptoms"],
+            "causes": doc["causes"],
+            "repair_steps": doc["repair_steps"],
+            "text": doc["text"],
+            "score": score,
+            "source": source,
+        }
+
+    def exact_matches(self, dtc_code: str) -> list:
+        """Return only records for the requested DTC code (case-insensitive)."""
+        return [
+            self._to_result(doc, "exact_dtc", 1.0)
+            for doc in self.docs_by_code.get(dtc_code.strip().upper(), [])
+        ]
         
     def search(self, query: str, top_k: int = 5) -> list:
         """Search using BM25 keyword matching"""
@@ -31,15 +55,6 @@ class BM25Retriever:
         results = []
         for idx in top_indices:
             doc = self.docs[idx]
-            results.append({
-                "dtc_code": doc["dtc_code"],
-                "fault_name": doc["fault_name"],
-                "symptoms": doc["symptoms"],
-                "causes": doc["causes"],
-                "repair_steps": doc["repair_steps"],
-                "text": doc["text"],
-                "score": float(scores[idx]),
-                "source": "bm25"
-            })
+            results.append(self._to_result(doc, "bm25", float(scores[idx])))
         
         return results

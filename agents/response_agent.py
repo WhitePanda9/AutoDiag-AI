@@ -61,5 +61,15 @@ Return a JSON object with exactly these fields:
         except Exception as e:
             print(f"JSON parsing error: {e}")
             state["response"] = {"raw": response.content}
+
+        # These fields are system-generated evidence metadata, not LLM claims.
+        state["response"]["evidence"] = state.get("retrieved_evidence", [])
+        state["response"]["confidence"] = state.get("confidence", "Low")
+        state["response"]["warnings"] = state.get("warnings", [])
+        state.setdefault("trace", []).append({
+            "stage": "report_generation",
+            "status": "complete",
+            "detail": "Formatted the diagnosis and attached source evidence and safety metadata.",
+        })
         
         return state

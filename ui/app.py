@@ -1,111 +1,128 @@
-import sys
 import os
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+import sys
 
 import streamlit as st
-import json
 
-st.set_page_config(
-    page_title="Automotive Fault Diagnosis Agent",
-    page_icon="🔧",
-    layout="wide"
-)
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-st.title("🔧 Automotive Fault Diagnosis Agent")
-st.markdown("Multi-agent LangGraph system for intelligent OBD-II fault diagnosis")
+st.set_page_config(page_title="Automotive Fault Diagnosis Agent", page_icon="Wrench", layout="wide")
+st.title("Automotive Fault Diagnosis Agent")
+st.markdown("Evidence-linked OBD-II fault investigation")
 
-@st.cache_resource(show_spinner="Loading pipeline... please wait")
+
+@st.cache_resource(show_spinner="Loading pipeline...")
 def load_pipeline():
     from pipeline.graph import build_graph
     return build_graph()
 
+
 pipeline = load_pipeline()
+if "investigation" not in st.session_state:
+    st.session_state.investigation = None
 
-# Input section
-st.header("🚗 Input Fault Data")
 
-col1, col2 = st.columns(2)
+def display_report(result: dict) -> None:
+    """Render a completed, evidence-linked diagnostic report."""
+    response = result["response"]
+    st.header("Diagnosis Report")
+    severity = response.get("severity", "Unknown")
+    st.subheader(f"Severity: {severity}")
+    st.caption(f"Evidence confidence: {response.get('confidence', 'Low')}")
+    st.write(response.get("severity_explanation", ""))
 
-with col1:
-    st.subheader("DTC Codes")
-    dtc_input = st.text_input(
-        "Enter DTC codes (comma separated)",
-        placeholder="e.g. P0301, P0171"
-    )
+    for warning in response.get("warnings", []):
+        st.warning(warning)
 
-with col2:
-    st.subheader("Freeze Frame Data (Optional)")
+    left, right = st.columns(2)
+    with left:
+        st.subheader("Fault Summary")
+        st.info(response.get("fault_summary", "N/A"))
+        st.subheader("Immediate Action")
+        st.warning(response.get("immediate_action", "N/A"))
+        st.subheader("Estimated Repair")
+        st.write(response.get("estimated_repair", "N/A"))
+    with right:
+        st.subheader("Root Causes")
+        for index, cause in enumerate(response.get("root_causes", []), 1):
+            st.write(f"{index}. {cause}")
+        st.subheader("Diagnostic Steps")
+        for index, step in enumerate(response.get("diagnostic_steps", []), 1):
+            st.write(f"{index}. {step}")
+
+    with st.expander("Evidence used for this diagnosis"):
+        evidence_list = response.get("evidence", [])
+        if not evidence_list:
+            st.info("No directly matching knowledge-base evidence was found.")
+        for evidence in evidence_list:
+            st.markdown(f"**{evidence['dtc_code']} - {evidence['fault_name']}** ({evidence['source']})")
+            if evidence.get("candidate_causes"):
+                st.write("Knowledge-base causes: " + ", ".join(evidence["candidate_causes"]))
+            if evidence.get("matching_symptoms"):
+                st.write("Knowledge-base symptoms: " + ", ".join(evidence["matching_symptoms"]))
+            st.divider()
+
+    with st.expander("Diagnostic decision trace"):
+        for index, event in enumerate(result.get("trace", []), 1):
+            st.write(f"{index}. **{event['stage'].replace('_', ' ').title()}** - {event['detail']}")
+
+    with st.expander("View raw JSON response"):
+        st.json(response)
+
+
+st.header("Input Fault Data")
+left, right = st.columns(2)
+with left:
+    dtc_input = st.text_input("DTC codes (comma separated)", placeholder="e.g. P0301, P0171")
+with right:
     rpm = st.text_input("RPM at fault", placeholder="e.g. 2500")
-    coolant_temp = st.text_input("Coolant Temperature", placeholder="e.g. 90C")
-    fuel_trim = st.text_input("Fuel Trim", placeholder="e.g. +15%")
-    map_sensor = st.text_input("MAP Sensor", placeholder="e.g. 45kPa")
+    coolant_temp = st.text_input("Coolant temperature", placeholder="e.g. 90C")
+    fuel_trim = st.text_input("Fuel trim", placeholder="e.g. +15%")
+    map_sensor = st.text_input("MAP sensor", placeholder="e.g. 45kPa")
 
-if st.button("🔍 Diagnose", type="primary"):
+if st.button("Start investigation", type="primary"):
     if not dtc_input.strip():
         st.error("Please enter at least one DTC code.")
     else:
-        dtc_codes = [code.strip().upper() for code in dtc_input.split(",")]
-        
-        freeze_frame = {}
-        if rpm: freeze_frame["rpm"] = rpm
-        if coolant_temp: freeze_frame["coolant_temp"] = coolant_temp
-        if fuel_trim: freeze_frame["fuel_trim"] = fuel_trim
-        if map_sensor: freeze_frame["map_sensor"] = map_sensor
-        
-        with st.spinner("🤖 Agents are diagnosing the fault..."):
-            result = pipeline.invoke({
-                "dtc_codes": dtc_codes,
-                "freeze_frame": freeze_frame,
-                "retrieved_docs": [],
-                "diagnosis": "",
-                "response": {}
-            })
-        
-        response = result["response"]
-        
-        st.header("📋 Diagnosis Report")
-        
-        severity = response.get("severity", "Unknown")
-        severity_colors = {
-            "Low": "🟢",
-            "Medium": "🟡",
-            "High": "🟠",
-            "Critical": "🔴"
+        freeze_frame = {
+            key: value for key, value in {
+                "rpm": rpm,
+                "coolant_temp": coolant_temp,
+                "fuel_trim": fuel_trim,
+                "map_sensor": map_sensor,
+            }.items() if value
         }
-        badge = severity_colors.get(severity, "⚪")
-        
-        st.markdown(f"### {badge} Severity: {severity}")
-        st.markdown(f"**{response.get('severity_explanation', '')}**")
-        
-        st.divider()
-        
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            st.subheader("🎯 Fault Summary")
-            st.info(response.get("fault_summary", "N/A"))
-            
-            st.subheader("⚠️ Immediate Action")
-            st.warning(response.get("immediate_action", "N/A"))
-            
-            st.subheader("🔩 Estimated Repair")
-            st.write(response.get("estimated_repair", "N/A"))
-        
-        with col2:
-            st.subheader("🔍 Root Causes")
-            for i, cause in enumerate(response.get("root_causes", []), 1):
-                st.write(f"{i}. {cause}")
-            
-            st.subheader("🛠️ Diagnostic Steps")
-            for i, step in enumerate(response.get("diagnostic_steps", []), 1):
-                st.write(f"{i}. {step}")
-        
-        st.divider()
-        
-        with st.expander("📄 View Raw JSON Response"):
-            st.json(response)
-        
-        with st.expander("📚 View Retrieved Knowledge Base Documents"):
-            for doc in result["retrieved_docs"]:
-                st.markdown(f"**{doc['dtc_code']}** — {doc['fault_name']}")
-                st.divider()
+        initial_state = {
+            "dtc_codes": [code.strip().upper() for code in dtc_input.split(",") if code.strip()],
+            "freeze_frame": freeze_frame,
+            "retrieved_docs": [],
+            "diagnosis": "",
+            "response": {},
+        }
+        with st.spinner("Retrieving fault evidence..."):
+            result = pipeline.invoke(initial_state)
+        st.session_state.investigation = {"initial_state": initial_state, "result": result}
+
+if st.session_state.investigation:
+    investigation = st.session_state.investigation
+    result = investigation["result"]
+    if result.get("needs_follow_up"):
+        st.subheader("A few targeted questions before diagnosis")
+        st.caption("Answers are optional, but they improve diagnostic confidence.")
+        answers = {}
+        for question in result.get("follow_up_questions", []):
+            answers[question["id"]] = st.text_input(
+                question["question"], help=question["reason"], key=f"follow_up_{question['id']}"
+            )
+        if st.button("Continue investigation", type="primary"):
+            next_state = dict(investigation["initial_state"])
+            next_state["symptom_answers"] = answers
+            next_state["interview_complete"] = True
+            with st.spinner("Investigating the evidence..."):
+                completed = pipeline.invoke(next_state)
+            st.session_state.investigation = {"initial_state": investigation["initial_state"], "result": completed}
+            st.rerun()
+    else:
+        display_report(result)
+        if st.button("Start a new investigation"):
+            st.session_state.investigation = None
+            st.rerun()

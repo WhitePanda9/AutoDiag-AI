@@ -19,6 +19,10 @@ class HybridRetriever:
             timeout=30
         )
         print("Hybrid Retriever ready.")
+
+    def exact_dtc_search(self, dtc_code: str) -> list:
+        """Use the local knowledge base for strict DTC matching before fuzzy search."""
+        return self.bm25.exact_matches(dtc_code)
     
     def dense_search(self, query: str, top_k: int = 5) -> list:
         """Search using dense embeddings in Qdrant"""

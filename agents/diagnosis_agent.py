@@ -44,6 +44,9 @@ class DiagnosisAgent:
         dtc_codes = state["dtc_codes"]
         freeze_frame = state.get("freeze_frame", {})
         retrieved_docs = state["retrieved_docs"]
+        answers = state.get("symptom_answers", {})
+        warnings = state.get("warnings", [])
+        confidence = state.get("confidence", "Low")
         
         # Build context from retrieved docs
         context = ""
@@ -64,12 +67,25 @@ class DiagnosisAgent:
                 ff_context += f"  {key}: {value}\n"
         else:
             ff_context = "\nFreeze Frame Data: Not provided\n"
+
+        answers_context = "\nFollow-up answers: Not provided\n"
+        if answers:
+            answers_context = "\nFollow-up answers supplied by the user:\n" + "\n".join(
+                f"  {question}: {answer}" for question, answer in answers.items() if answer
+            ) + "\n"
+
+        safety_context = ""
+        if warnings:
+            safety_context = "\nSafety and evidence warnings:\n" + "\n".join(f"- {warning}" for warning in warnings) + "\n"
         
         # Build prompt
         user_prompt = f"""Diagnose the following vehicle fault:
 
 DTC Codes: {', '.join(dtc_codes)}
 {ff_context}
+{answers_context}
+Evidence confidence: {confidence}
+{safety_context}
 IMPORTANT: The freeze frame data above is critical evidence.
 - Fuel trim > +10% suggests lean condition — vacuum leak, MAF sensor, or fuel pressure issue
 - Low MAP sensor values suggest intake restriction
@@ -78,6 +94,8 @@ IMPORTANT: The freeze frame data above is critical evidence.
 
 Retrieved Knowledge Base:
 {context}
+
+Only propose causes supported by the retrieved knowledge base or supplied inputs. If confidence is Low or warnings show no direct DTC match, clearly state the uncertainty and request manufacturer documentation or qualified inspection. Preserve any safety warning in the immediate action.
 
 Provide a structured diagnosis with:
 1. Primary fault analysis
@@ -93,4 +111,9 @@ Provide a structured diagnosis with:
         
         response = self.llm.invoke(messages)
         state["diagnosis"] = response.content
+        state.setdefault("trace", []).append({
+            "stage": "diagnosis",
+            "status": "complete",
+            "detail": f"Ranked causes using {len(retrieved_docs)} retrieved evidence record(s).",
+        })
         return state

@@ -6,12 +6,14 @@ from langgraph.graph import StateGraph, END
 from agents.retrieval_agent import RetrievalAgent, AgentState
 from agents.diagnosis_agent import DiagnosisAgent
 from agents.response_agent import ResponseAgent
+from agents.interview_agent import InterviewAgent
 
 def build_graph():
     # Initialize agents
     retrieval_agent = RetrievalAgent()
     diagnosis_agent = DiagnosisAgent()
     response_agent = ResponseAgent()
+    interview_agent = InterviewAgent()
     
     # Build graph
     graph = StateGraph(AgentState)
@@ -20,10 +22,16 @@ def build_graph():
     graph.add_node("retrieval", retrieval_agent.run)
     graph.add_node("diagnosis", diagnosis_agent.run)
     graph.add_node("response", response_agent.run)
+    graph.add_node("interview", interview_agent.run)
     
     # Add edges
     graph.set_entry_point("retrieval")
-    graph.add_edge("retrieval", "diagnosis")
+    graph.add_edge("retrieval", "interview")
+    graph.add_conditional_edges(
+        "interview",
+        lambda state: "follow_up" if state.get("needs_follow_up") else "diagnosis",
+        {"follow_up": END, "diagnosis": "diagnosis"},
+    )
     graph.add_edge("diagnosis", "response")
     graph.add_edge("response", END)
     
