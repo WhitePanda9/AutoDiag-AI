@@ -14,6 +14,7 @@ class AgentState(TypedDict):
     trace: NotRequired[List[dict]]
     follow_up_questions: NotRequired[List[dict]]
     symptom_answers: NotRequired[dict]
+    interview_findings: NotRequired[List[dict]]
     interview_complete: NotRequired[bool]
     needs_follow_up: NotRequired[bool]
 
