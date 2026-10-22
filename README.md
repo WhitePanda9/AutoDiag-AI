@@ -125,6 +125,9 @@ The included tests cover:
 1. Exact `P0300` retrieval excluding unrelated fuzzy neighbors.
 2. Unknown-code warning and low-confidence behavior.
 3. Follow-up interview question and completion flow.
+4. Interview rules per fault family, safety-first ordering, the question cap and evidence-based symptom checklists.
+5. Answer clean-up: multi-select answers, "Not sure", length limits and skipped interviews.
+6. The Streamlit app driven end to end with a stub pipeline (no API keys or network needed).
 
 ## Project layout
 
