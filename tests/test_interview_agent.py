@@ -13,7 +13,7 @@ def ids(questions: list[dict]) -> list[str]:
 
 class InterviewPlanningTests(unittest.TestCase):
     def test_misfire_without_freeze_frame_asks_prioritised_questions(self):
-        questions = plan_questions({"dtc_codes": ["P0301"], "freeze_frame": {}, "retrieved_docs": []})
+        questions = plan_questions({"dtc_codes": ["P0301"], "freeze_frame": {}, "retrieved_docs": [evidence("P0301")]})
         self.assertEqual(ids(questions), ["mil_state", "operating_condition", "misfire_behavior", "recent_work"])
         self.assertTrue(all(question["options"] for question in questions))
 
@@ -34,7 +34,7 @@ class InterviewPlanningTests(unittest.TestCase):
         questions = plan_questions({
             "dtc_codes": ["P0505"],
             "freeze_frame": {"rpm": "800"},
-            "retrieved_docs": [evidence("P0505", symptoms=["Unstable idle"])],
+            "retrieved_docs": [evidence("P0505")],
         })
         self.assertEqual(questions, [])
 
@@ -48,6 +48,23 @@ class InterviewPlanningTests(unittest.TestCase):
         checklist = questions[1]
         self.assertEqual(checklist["options"], ["Check engine light", "Reduced power", "None of these"])
         self.assertTrue(checklist["multi"])
+
+    def test_codes_without_own_rule_still_get_questions(self):
+        for code in ("P0131", "P0135", "P0325", "P0340", "P0500", "P2135"):
+            with self.subTest(code=code):
+                questions = plan_questions({"dtc_codes": [code], "freeze_frame": {"rpm": "2500"},
+                                            "retrieved_docs": [evidence(code)]})
+                self.assertTrue(questions)
+
+    def test_documented_symptoms_alone_start_an_interview(self):
+        questions = plan_questions({"dtc_codes": ["P0505"], "freeze_frame": {"rpm": "800"},
+                                    "retrieved_docs": [evidence("P0505", symptoms=["Unstable idle"])]})
+        self.assertEqual(ids(questions), ["evidence_symptoms", "recent_work"])
+
+    def test_unknown_code_asks_for_vehicle_details_as_free_text(self):
+        questions = plan_questions({"dtc_codes": ["P9999"], "freeze_frame": {"rpm": "2500"}, "retrieved_docs": []})
+        self.assertEqual(questions[0]["id"], "vehicle_details")
+        self.assertEqual(questions[0]["options"], [])
 
     def test_code_family_ranges(self):
         cases = {"P0442": "fuel_cap", "P0730": "shift_quality", "U0100": "battery_history", "P0128": "temperature_gauge"}

@@ -28,6 +28,7 @@ class Context:
     freeze_frame: dict
     evidence_text: str
     evidence_symptoms: tuple[str, ...]
+    unmatched_codes: tuple[str, ...] = ()
 
     def has_code(self, *codes: str) -> bool:
         return any(code in self.codes for code in codes)
@@ -58,7 +59,19 @@ class Rule:
     multi: bool = False
     # Supplementary questions refine an interview but never start one on their own.
     supplementary: bool = False
+    free_text: bool = False
 
+
+SENSOR_CIRCUIT_RANGES = (
+    ("P0100", "P0109"),  # MAF / MAP
+    ("P0120", "P0124"),  # throttle position
+    ("P0220", "P0229"),  # throttle / pedal position B-C
+    ("P2135", "P2138"),  # throttle / pedal correlation
+    ("P0325", "P0349"),  # knock, crankshaft and camshaft sensors
+    ("P0365", "P0369"),  # camshaft sensor B
+    ("P0400", "P0409"),  # EGR
+    ("P0500", "P0503"),  # vehicle speed sensor
+)
 
 RULES: tuple[Rule, ...] = (
     Rule(
@@ -69,6 +82,14 @@ RULES: tuple[Rule, ...] = (
          "Smell of fuel", NONE_OF_THESE),
         lambda c: c.mentions(*SAFETY_TERMS) or c.has_prefix("C", "B"),
         multi=True,
+    ),
+    Rule(
+        "vehicle_details",
+        "What is the vehicle's make, model, year and engine?",
+        "Codes without a generic OBD-II record are often manufacturer-specific and need the vehicle details to look up.",
+        (),
+        lambda c: bool(c.unmatched_codes),
+        free_text=True,
     ),
     Rule(
         "mil_state",
@@ -147,13 +168,29 @@ RULES: tuple[Rule, ...] = (
         lambda c: c.has_prefix("U") or c.in_range("P0560", "P0563") or c.in_range("P0600", "P0606"),
     ),
     Rule(
+        "exhaust_condition",
+        "Has there been recent exhaust work, or do you hear an exhaust leak?",
+        "Exhaust leaks and disturbed sensor wiring are common causes of oxygen-sensor codes.",
+        ("Recent exhaust work", "Ticking or puffing exhaust leak", "Neither", NOT_SURE),
+        lambda c: c.in_range("P0130", "P0167"),
+        multi=True,
+    ),
+    Rule(
+        "fault_pattern",
+        "How does the fault behave?",
+        "Faults that come and go with vibration or moisture usually point to wiring or connectors rather than the sensor itself.",
+        ("Constant", "Comes and goes", "Worse over bumps or in wet weather", "Engine stalls or will not start",
+         NOT_SURE),
+        lambda c: any(c.in_range(start, end) for start, end in SENSOR_CIRCUIT_RANGES),
+        multi=True,
+    ),
+    Rule(
         "evidence_symptoms",
         "Which of these documented symptoms do you notice?",
         "These symptoms are listed in the knowledge base for your codes; confirming them strengthens or weakens each cause.",
         (),  # filled from the retrieved evidence
         lambda c: bool(c.evidence_symptoms),
         multi=True,
-        supplementary=True,
     ),
     Rule(
         "recent_work",
@@ -173,16 +210,22 @@ def _context(state: dict[str, Any]) -> Context:
         for symptom in doc.get("symptoms", []):
             if symptom and symptom not in symptoms:
                 symptoms.append(symptom)
+    codes = tuple(code.strip().upper() for code in state.get("dtc_codes", []) if code.strip())
+    found = {doc.get("dtc_code", "").upper() for doc in docs}
     return Context(
-        codes=tuple(code.strip().upper() for code in state.get("dtc_codes", []) if code.strip()),
+        codes=codes,
         freeze_frame=state.get("freeze_frame") or {},
         evidence_text=" ".join(doc.get("text", "") for doc in docs).lower(),
         evidence_symptoms=tuple(symptoms[:MAX_SYMPTOM_OPTIONS]),
+        unmatched_codes=tuple(code for code in codes if code not in found),
     )
 
 
 def _as_question(rule: Rule, context: Context) -> dict[str, Any]:
-    options = rule.options or context.evidence_symptoms + (NONE_OF_THESE,)
+    if rule.free_text:
+        options: tuple[str, ...] = ()
+    else:
+        options = rule.options or context.evidence_symptoms + (NONE_OF_THESE,)
     return {
         "id": rule.id,
         "question": rule.question,
